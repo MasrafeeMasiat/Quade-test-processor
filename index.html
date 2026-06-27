@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quade Test Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Include jStat for F-Distribution calculations -->
+    <script src="https://cdn.jsdelivr.net/npm/jstat@latest/dist/jstat.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+        <h1 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Quade Test Processor</h1>
+
+        <div id="app">
+            <!-- Step 1: Initialization -->
+            <div id="step1" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block font-medium">Number of Blocks:</label>
+                        <input type="number" id="numBlocks" class="w-full p-2 border rounded" value="4">
+                    </div>
+                    <div>
+                        <label class="block font-medium">Number of Treatments:</label>
+                        <input type="number" id="numTreatments" class="w-full p-2 border rounded" value="7">
+                    </div>
+                </div>
+                <button onclick="setupDetails()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Next</button>
+            </div>
+
+            <!-- Step 2: Naming -->
+            <div id="step2" class="hidden space-y-4">
+                <div class="flex gap-4 mb-4">
+                    <button onclick="loadExampleNames('president')" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 text-sm font-bold">Load President Example Names</button>
+                    <button onclick="loadExampleNames('store')" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm font-bold">Load Store/Brand Example Names</button>
+                </div>
+                <div id="namesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+                <div class="flex gap-4 mt-4">
+                    <button onclick="goBack('step2', 'step1')" class="bg-gray-400 text-white px-6 py-2 rounded hover:bg-gray-500">Back</button>
+                    <button onclick="generateInputForm()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Continue to Data Entry</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Data Entry -->
+            <div id="step3" class="hidden space-y-4">
+                <div class="flex gap-4 mb-4">
+                    <button onclick="loadExampleData('president')" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 text-sm font-bold">Load President Example Data</button>
+                    <button onclick="loadExampleData('store')" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm font-bold">Load Store/Brand Example Data</button>
+                </div>
+                <div id="tableContainer" class="overflow-x-auto border rounded"></div>
+                <div class="flex gap-4 mt-4">
+                    <button onclick="goBack('step3', 'step2')" class="bg-gray-400 text-white px-6 py-2 rounded hover:bg-gray-500">Back</button>
+                    <button onclick="processData()" class="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700">Calculate & Rank</button>
+                </div>
+            </div>
+
+            <!-- Result -->
+            <div id="result" class="hidden mt-6">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Analysis Results</h2>
+                <div id="finalOutput" class="overflow-x-auto"></div>
+                <div class="flex gap-4 mt-4">
+                    <button onclick="goBack('result', 'step3')" class="bg-gray-400 text-white px-6 py-2 rounded hover:bg-gray-500">Back to Data Entry</button>
+                    <button onclick="goBack('result', 'step4')" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Proceed to Step 4 (Calculate Sij)</button>
+                </div>
+            </div>
+
+            <!-- Step 4: Sij Calculation -->
+            <div id="step4" class="hidden mt-6">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Step 4: Relative Ranks (Sij)</h2>
+                <div id="step4Output" class="space-y-6"></div>
+                <div class="flex gap-4 mt-6">
+                    <button onclick="goBack('step4', 'result')" class="bg-gray-400 text-white px-6 py-2 rounded hover:bg-gray-500">Back to Results</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let config = {};
+
+        function goBack(currentId, targetId) {
+            document.getElementById(currentId).classList.add('hidden');
+            document.getElementById(targetId).classList.remove('hidden');
+        }
+
+        function setupDetails() {
+            config.blocks = parseInt(document.getElementById('numBlocks').value);
+            config.treatments = parseInt(document.getElementById('numTreatments').value);
+
+            let html = `<div><h3 class="font-bold mb-2">Block Names:</h3>`;
+            for(let i=0; i<config.blocks; i++) html += `<input type="text" id="bName${i}" class="block w-full p-1 border rounded mb-1" value="${config.blockNames ? config.blockNames[i] : 'Block ' + (i+1)}">`;
+            html += `</div><div><h3 class="font-bold mb-2">Treatment Names:</h3>`;
+            for(let i=0; i<config.treatments; i++) html += `<input type="text" id="tName${i}" class="block w-full p-1 border rounded mb-1" value="${config.treatNames ? config.treatNames[i] : 'Treatment ' + (i+1)}">`;
+            html += `</div>`;
+
+            document.getElementById('namesContainer').innerHTML = html;
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+        }
+
+        function loadExampleNames(type) {
+            let defaultBlocks, defaultTreats;
+
+            if (type === 'president') {
+                document.getElementById('numBlocks').value = 4;
+                document.getElementById('numTreatments').value = 7;
+                setupDetails(); // Regenerate inputs with new dimensions
+                defaultBlocks = ["Candor", "Informative value", "Combative skill", "Humor"];
+                defaultTreats = ["President 1", "President 2", "President 3", "President 4", "President 5", "President 6", "President 7"];
+            } else if (type === 'store') {
+                document.getElementById('numBlocks').value = 7;
+                document.getElementById('numTreatments').value = 5;
+                setupDetails(); // Regenerate inputs with new dimensions
+                defaultBlocks = ["Store 1", "Store 2", "Store 3", "Store 4", "Store 5", "Store 6", "Store 7"];
+                defaultTreats = ["Brand S1", "Brand S2", "Brand S3", "Brand S4", "Brand S5"];
+            }
+
+            for(let i=0; i<config.blocks; i++) {
+                let el = document.getElementById(`bName${i}`);
+                if (el) el.value = defaultBlocks[i] || `Block ${i+1}`;
+            }
+            for(let i=0; i<config.treatments; i++) {
+                let el = document.getElementById(`tName${i}`);
+                if (el) el.value = defaultTreats[i] || `Treatment ${i+1}`;
+            }
+        }
+
+        function generateInputForm() {
+            config.blockNames = Array.from({length: config.blocks}, (_, i) => document.getElementById(`bName${i}`).value);
+            config.treatNames = Array.from({length: config.treatments}, (_, i) => document.getElementById(`tName${i}`).value);
+
+            let html = '<table class="w-full border-collapse text-sm"><thead><tr class="bg-gray-100"><th class="border p-2">Block</th>';
+            config.treatNames.forEach(t => html += `<th class="border p-2">${t}</th>`);
+            html += '</tr></thead><tbody>';
+            config.blockNames.forEach((b, bi) => {
+                html += `<tr><td class="border p-2 font-bold bg-gray-50">${b}</td>`;
+                config.treatNames.forEach((_, ti) => {
+                    let val = (config.data && config.data[bi] && config.data[bi][ti]) ? config.data[bi][ti] : '';
+                    html += `<td class="border p-2"><input type="number" id="v_${bi}_${ti}" class="w-20 p-1 border rounded" placeholder="0" value="${val}"></td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            document.getElementById('tableContainer').innerHTML = html;
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('step3').classList.remove('hidden');
+        }
+
+        function loadExampleData(type) {
+            // Auto-correct table dimensions if the user clicks this without loading the names first
+            if (type === 'president' && (config.blocks !== 4 || config.treatments !== 7)) {
+                loadExampleNames('president');
+                generateInputForm();
+            } else if (type === 'store' && (config.blocks !== 7 || config.treatments !== 5)) {
+                loadExampleNames('store');
+                generateInputForm();
+            }
+
+            let exampleMatrix;
+            if (type === 'president') {
+                exampleMatrix = [
+                    [6, 8, 7, 5, 2, 5, 8],
+                    [4, 7, 5, 6, 3, 6, 7],
+                    [8, 6, 4, 8, 6, 9, 4],
+                    [8.5, 7, 6, 4, 4, 9, 3]
+                ];
+            } else if (type === 'store') {
+                exampleMatrix = [
+                    [5, 4, 7, 10, 12],
+                    [1, 3, 1, 0, 2],
+                    [16, 12, 22, 22, 35],
+                    [5, 4, 3, 5, 4],
+                    [10, 9, 7, 13, 10],
+                    [19, 18, 28, 37, 58],
+                    [10, 7, 6, 8, 7]
+                ];
+            }
+
+            for(let bi=0; bi<config.blocks; bi++) {
+                for(let ti=0; ti<config.treatments; ti++) {
+                    let el = document.getElementById(`v_${bi}_${ti}`);
+                    if (el) {
+                        if (exampleMatrix[bi] && exampleMatrix[bi][ti] !== undefined) {
+                            el.value = exampleMatrix[bi][ti];
+                        } else {
+                            el.value = Math.floor(Math.random() * 5) + 1; // Fallback for extra cells
+                        }
+                    }
+                }
+            }
+        }
+
+        function processData() {
+            config.data = [];
+            let blockData = [];
+            config.blockNames.forEach((b, bi) => {
+                let row = [];
+                let rawRow = [];
+                for(let ti=0; ti<config.treatments; ti++) {
+                    let val = parseFloat(document.getElementById(`v_${bi}_${ti}`).value) || 0;
+                    rawRow.push(val);
+                    row.push(val);
+                }
+                config.data.push(rawRow);
+
+                // Rank treatments within block with Tie-handling (Average Rank)
+                let indexed = row.map((val, idx) => ({val, idx}));
+                indexed.sort((a,b) => a.val - b.val);
+                let ranks = new Array(config.treatments);
+
+                let i = 0;
+                while (i < indexed.length) {
+                    let j = i;
+                    let sumRanks = 0;
+
+                    // Group elements with the same value
+                    while (j < indexed.length && indexed[j].val === indexed[i].val) {
+                        sumRanks += (j + 1); // Ranks are 1-based (1, 2, 3...)
+                        j++;
+                    }
+
+                    // Calculate average rank for the tied group
+                    let avgRank = sumRanks / (j - i);
+
+                    // Assign the average rank to all tied elements
+                    for (let k = i; k < j; k++) {
+                        ranks[indexed[k].idx] = avgRank;
+                    }
+                    i = j; // Move past this group of duplicates
+                }
+
+                // Calculate range based on original values, NOT ranks
+                let range = Math.max(...row) - Math.min(...row);
+                blockData.push({ name: b, ranks: ranks, range: range, index: bi });
+            });
+
+            // Rank blocks based on range (Ascending with Tie-handling)
+            let sortedRanges = blockData.map((b, idx) => ({val: b.range, idx: idx}));
+            sortedRanges.sort((a,b) => a.val - b.val); // Ascending order
+
+            let blockRanks = new Array(config.blocks);
+            let rangeIdx = 0;
+            while (rangeIdx < sortedRanges.length) {
+                let j = rangeIdx;
+                let sumRanks = 0;
+                while (j < sortedRanges.length && sortedRanges[j].val === sortedRanges[rangeIdx].val) {
+                    sumRanks += (j + 1);
+                    j++;
+                }
+                let avgRank = sumRanks / (j - rangeIdx);
+                for (let k = rangeIdx; k < j; k++) {
+                    blockRanks[sortedRanges[k].idx] = avgRank;
+                }
+                rangeIdx = j;
+            }
+
+            blockData.forEach((b, i) => b.blockRank = blockRanks[i]);
+
+            // 1. Build Reference Table for Original Data
+            let html = `<h3 class="text-lg font-semibold mb-2 text-gray-700">Input Data Reference</h3>
+            <table class="w-full border-collapse border text-sm mb-8">
+                <thead><tr class="bg-gray-100"><th class="border p-2">Block</th>`;
+            config.treatNames.forEach(t => html += `<th class="border p-2">${t}</th>`);
+            html += `</tr></thead><tbody>`;
+            config.blockNames.forEach((b, bi) => {
+                html += `<tr><td class="border p-2 font-bold bg-gray-50">${b}</td>`;
+                config.data[bi].forEach(val => html += `<td class="border p-2 text-center">${val}</td>`);
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+
+            // 2. Build Ranking Results Table
+            html += `<h3 class="text-lg font-semibold mb-2 text-gray-700">Ranking Results</h3>
+            <table class="w-full border-collapse border text-sm"><thead><tr class="bg-gray-100">
+                <th class="border p-2">Block</th>`;
+            config.treatNames.forEach(t => html += `<th class="border p-2">${t}</th>`);
+            html += `<th class="border p-2">Range of Values</th><th class="border p-2">Block Rank</th>
+                </tr></thead><tbody>`;
+            blockData.forEach((b, i) => {
+                html += `<tr>
+                    <td class="border p-2 font-bold">${b.name}</td>`;
+                b.ranks.forEach((r, ti) => {
+                    let originalVal = config.data[i][ti];
+                    html += `<td class="border p-2 text-center"><span class="font-semibold text-gray-900">${originalVal}</span> <span class="text-gray-600">(${r})</span></td>`;
+                });
+                html += `<td class="border p-2 text-center">${b.range}</td>
+                    <td class="border p-2 font-bold text-blue-700 text-center">${b.blockRank}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+
+            document.getElementById('finalOutput').innerHTML = html;
+
+            // --- Generate Step 4 Content (Sij) ---
+            let middleRank = (config.treatments + 1) / 2;
+
+            let step4Html = `<h3 class="text-lg font-semibold mb-2 text-gray-700">1. Treatment Ranks Only</h3>`;
+            step4Html += `<table class="w-full border-collapse border text-sm mb-6"><thead><tr class="bg-gray-100"><th class="border p-2">Block</th>`;
+            config.treatNames.forEach(t => step4Html += `<th class="border p-2">${t}</th>`);
+            step4Html += `</tr></thead><tbody>`;
+            blockData.forEach(b => {
+                step4Html += `<tr><td class="border p-2 font-bold bg-gray-50">${b.name}</td>`;
+                b.ranks.forEach(r => step4Html += `<td class="border p-2 text-center">${r}</td>`);
+                step4Html += `</tr>`;
+            });
+            step4Html += `</tbody></table>`;
+
+            step4Html += `<div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+                            <p class="font-bold text-blue-900 text-lg">2. Middle Rank Calculation</p>
+                            <p class="text-blue-800 font-mono mt-1">Formula: (Number of Treatments + 1) / 2</p>
+                            <p class="text-blue-800 font-mono mt-1">Calculation: (${config.treatments} + 1) / 2 = <strong>${middleRank}</strong></p>
+                          </div>`;
+
+            step4Html += `<h3 class="text-lg font-semibold mb-2 text-gray-700">3. S<sub>ij</sub> Values (Weighted Relative Ranks)</h3>`;
+            step4Html += `<p class="mb-2 text-sm text-gray-600 italic">Formula: S<sub>ij</sub> = Block Rank &times; (Treatment Rank - Middle Rank)</p>`;
+            step4Html += `<table class="w-full border-collapse border text-sm mb-4"><thead><tr class="bg-gray-100"><th class="border p-2">Block</th>`;
+            config.treatNames.forEach(t => step4Html += `<th class="border p-2">${t}</th>`);
+            step4Html += `<th class="border p-2 text-green-800">S<sub>i</sub><sup>2</sup> (Row Sum Sq)</th></tr></thead><tbody>`;
+
+            let sjSums = new Array(config.treatments).fill(0);
+            let grandTotalA1 = 0;
+
+            blockData.forEach(b => {
+                step4Html += `<tr><td class="border p-2 font-bold bg-gray-50">${b.name} <span class="text-xs text-gray-500 font-normal">(Rank: ${b.blockRank})</span></td>`;
+                let siSumSq = 0;
+                b.ranks.forEach((r, ti) => {
+                    let sij = b.blockRank * (r - middleRank);
+                    sjSums[ti] += sij; // Add to column sum
+                    siSumSq += (sij * sij); // Square the value and add to row sum sq
+                    // Format to remove excessive decimals if any float math issues occur
+                    step4Html += `<td class="border p-2 text-center font-semibold text-gray-800">${parseFloat(sij.toFixed(4))}</td>`;
+                });
+                grandTotalA1 += siSumSq;
+                step4Html += `<td class="border p-2 text-center font-bold text-green-700 bg-green-50">${parseFloat(siSumSq.toFixed(4))}</td></tr>`;
+            });
+
+            // Add the Sj Summation Row
+            step4Html += `<tr class="bg-blue-100 font-bold border-t-2 border-blue-400">
+                <td class="border p-2 text-right text-blue-900">S<sub>j</sub> (Column Sum):</td>`;
+            sjSums.forEach(sum => {
+                step4Html += `<td class="border p-2 text-center text-blue-900 text-base">${parseFloat(sum.toFixed(4))}</td>`;
+            });
+            step4Html += `<td class="border p-2 text-center text-green-900 text-base bg-green-200" title="A1 = Grand Total of Squared Sij">A<sub>1</sub> = ${parseFloat(grandTotalA1.toFixed(4))}</td></tr>`;
+
+            // Add the Sj Squared Row
+            let sumOfSquaredSj = 0;
+            step4Html += `<tr class="bg-purple-100 font-bold border-t border-purple-300">
+                <td class="border p-2 text-right text-purple-900">S<sub>j</sub><sup>2</sup> (Squared Col Sum):</td>`;
+            sjSums.forEach(sum => {
+                let sjSq = sum * sum;
+                sumOfSquaredSj += sjSq;
+                step4Html += `<td class="border p-2 text-center text-purple-900 text-base">${parseFloat(sjSq.toFixed(4))}</td>`;
+            });
+            step4Html += `<td class="border p-2 text-center text-purple-900 text-base bg-purple-200" title="Sum of Sj^2">&sum;S<sub>j</sub><sup>2</sup> = ${parseFloat(sumOfSquaredSj.toFixed(4))}</td></tr>`;
+
+            step4Html += `</tbody></table>`;
+
+            // --- Calculate B1 ---
+            let b1 = sumOfSquaredSj / config.blocks;
+
+            step4Html += `<div class="bg-purple-50 border-l-4 border-purple-500 p-4 mt-6">
+                            <p class="font-bold text-purple-900 text-lg">4. B<sub>1</sub> Calculation</p>
+                            <p class="text-purple-800 font-mono mt-1">Formula: B<sub>1</sub> = (&sum;S<sub>j</sub><sup>2</sup>) / b</p>
+                            <p class="text-purple-800 mt-1">Sum of Squared S<sub>j</sub> = ${parseFloat(sumOfSquaredSj.toFixed(4))}</p>
+                            <p class="text-purple-800 font-mono mt-1">Calculation: ${parseFloat(sumOfSquaredSj.toFixed(4))} / ${config.blocks} = <strong class="text-xl">${parseFloat(b1.toFixed(4))}</strong></p>
+                          </div>`;
+
+            // --- Calculate Final T Statistic & F-Test ---
+            let tStat = ((config.blocks - 1) * b1) / (grandTotalA1 - b1);
+            let k1 = config.treatments - 1;
+            let k2 = (config.blocks - 1) * (config.treatments - 1);
+            let alpha = 0.05;
+
+            // Look up Critical F Value and exact P-Value using jStat
+            let fCrit = jStat.centralF.inv(1 - alpha, k1, k2);
+            let pValue = 1 - jStat.centralF.cdf(tStat, k1, k2);
+            let rejectNull = tStat > fCrit;
+
+            step4Html += `<div class="bg-teal-50 border-l-4 border-teal-500 p-4 mt-6">
+                            <p class="font-bold text-teal-900 text-lg">5. Quade Test Statistic (T) & Conclusion</p>
+                            <p class="text-teal-800 font-mono mt-2">Formula: T = [(b - 1) &times; B<sub>1</sub>] / [A<sub>1</sub> - B<sub>1</sub>]</p>
+                            <p class="text-teal-800 font-mono mt-1">Calculation: [(${config.blocks} - 1) &times; ${parseFloat(b1.toFixed(4))}] / [${parseFloat(grandTotalA1.toFixed(4))} - ${parseFloat(b1.toFixed(4))}] = <strong class="text-2xl text-teal-900">${parseFloat(tStat.toFixed(4))}</strong></p>
+
+                            <div class="mt-6 overflow-x-auto">
+                                <table class="w-full border-collapse border bg-white shadow-sm">
+                                    <thead>
+                                        <tr class="bg-gray-800 text-white">
+                                            <th colspan="4" class="border p-3 text-lg font-bold text-center">Quade Test Results Summary</th>
+                                        </tr>
+                                        <tr class="bg-gray-200 text-gray-800 text-sm uppercase tracking-wide">
+                                            <th class="border p-3 text-center">Test Statistic (T)</th>
+                                            <th class="border p-3 text-center">Critical Value F(${k1}, ${k2})</th>
+                                            <th class="border p-3 text-center">P-Value</th>
+                                            <th class="border p-3 text-center">Decision (&alpha; = ${alpha})</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td class="border p-4 text-center font-bold text-xl text-teal-900">${parseFloat(tStat.toFixed(4))}</td>
+                                            <td class="border p-4 text-center font-semibold text-lg text-gray-700">${parseFloat(fCrit.toFixed(4))}</td>
+                                            <td class="border p-4 text-center font-semibold text-lg text-gray-700">${parseFloat(pValue.toFixed(5))}</td>
+                                            <td class="border p-4 text-center font-bold text-lg ${rejectNull ? 'text-red-700 bg-red-50' : 'text-green-700 bg-green-50'}">
+                                                ${rejectNull ? 'Reject Null Hypothesis' : 'Accept/Fail to Reject Null Hypothesis'}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                          </div>`;
+
+            document.getElementById('step4Output').innerHTML = step4Html;
+
+            document.getElementById('step3').classList.add('hidden');
+            document.getElementById('result').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
